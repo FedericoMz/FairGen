@@ -1,0 +1,1 @@
+from .fairgen import FairGen

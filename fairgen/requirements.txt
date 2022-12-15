@@ -1,0 +1,10 @@
+numpy
+pandas
+networkx
+matplotlib
+seaborn
+sklearn_extra
+pyod
+lightgbm
+deap
+scipy
