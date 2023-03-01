@@ -456,7 +456,7 @@ class FairGen(object):
 
     def get_final_df (self):
         try:
-            return self.genetic_df
+            return self.final_df
         except:
             print("To get the final, balanced dataset, run FairGen.fit() and FairGen.balance()")
 
