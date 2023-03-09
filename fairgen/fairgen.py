@@ -29,7 +29,7 @@ class FairGen(object):
     def __init__(self, df: object, sensitive_attributes:list, class_name:str, 
                 causal_reg:list = [], causal_class:list = [],
                 discrete_attributes:list = [], values_in_dataset_attributes:list = [], 
-                mode:str = 'Distance', ds:str = 'Fixed'):
+                mode:str = 'Distance', ds:str = 'Fixed', no_fair:bool = False):
     
 
         self.df = df
@@ -40,7 +40,8 @@ class FairGen(object):
         self.discrete_attributes = discrete_attributes  
         self.values_in_dataset_attributes = values_in_dataset_attributes  
         self.mode = mode
-        self.ds = ds  
+        self.ds = ds
+        self.no_fair = no_fair
 
     def fit(self):
 
@@ -268,7 +269,6 @@ class FairGen(object):
         # we append them to the very end of the list => lower priority
 
         
-        
         ### PART3 - Combination Test [Getting the constraints]
         
         
@@ -385,29 +385,14 @@ class FairGen(object):
 
         ### PART4 - Creating new records using the constraints to balance the dataset
         
-        constraints = Counter(tuple(constraints))
-                
-        for const in constraints.keys():
-            
-            subset = self.og_df.copy() #subgroup of records with const values (e.g.: Black, Male, Positive)
-            for tup in const:
-                subset = subset[subset[subset.columns[tup[0]]] == tup[1]]
-                
-            if len(subset) > 0:
-                kmedoids = KMedoids(n_clusters=1, random_state=42).fit(subset)
-                medoid = kmedoids.cluster_centers_[0] #medoid of subgroup
-            else:
-                medoid = [None]
-            
-
-            #we use a GA for every const [eg. Black, Male, Positve] and each associated number [e.g. 5]
-            #e.g., we create 5 records following the consts
-            #if we have 20 unique consts, we use the GA 20 times
-            
-            new_records = GA(self.values, const, constraints[const], self.forest, medoid, 
+        
+        if no_fair:
+            kmedoids = KMedoids(n_clusters=1, random_state=42).fit(self.og_df)
+            medoid = kmedoids.cluster_centers_[0] #medoid of entire dataset
+            const = []
+            new_records = GA(self.values, const, len(record_informations), self.forest, medoid, 
                             self.values_in_dataset_indexes, self.discrete_indexes, self.regular_indexes, self.causal_reg, 
                             self.causal_class, self.mode, self.ds)
-
             for all_records in new_records:
                 for record in all_records:
                     target = const[0][1]
@@ -430,6 +415,54 @@ class FairGen(object):
                             
                     self.X_proba.append(record) #balanced dataset (OG + Syntethic)
                     self.genetic_data.append(record) #other dataset with ONLY synthetic data
+            
+            
+        else:   
+            constraints = Counter(tuple(constraints))
+
+            for const in constraints.keys():
+
+                subset = self.og_df.copy() #subgroup of records with const values (e.g.: Black, Male, Positive)
+                for tup in const:
+                    subset = subset[subset[subset.columns[tup[0]]] == tup[1]]
+
+                if len(subset) > 0:
+                    kmedoids = KMedoids(n_clusters=1, random_state=42).fit(subset)
+                    medoid = kmedoids.cluster_centers_[0] #medoid of subgroup
+                else:
+                    kmedoids = KMedoids(n_clusters=1, random_state=42).fit(self.og_df)
+                    medoid = kmedoids.cluster_centers_[0] #medoid of entire dataset
+
+                #we use a GA for every const [eg. Black, Male, Positve] and each associated number [e.g. 5]
+                #e.g., we create 5 records following the consts
+                #if we have 20 unique consts, we use the GA 20 times
+
+                new_records = GA(self.values, const, constraints[const], self.forest, medoid, 
+                                self.values_in_dataset_indexes, self.discrete_indexes, self.regular_indexes, self.causal_reg, 
+                                self.causal_class, self.mode, self.ds)
+
+                for all_records in new_records:
+                    for record in all_records:
+                        target = const[0][1]
+                        for tup in const[1:]:
+                            att = self.attributes[tup[0]]
+                            val = tup[1]
+                            if val in self.sensitive_dict[att]['D']['values_list']:
+                                if target == 0: 
+                                    self.sensitive_dict[att]['D'][val]['N'].append(record)
+                                else:
+                                    self.sensitive_dict[att]['D'][val]['P'].append(record)
+                            elif val in self.sensitive_dict[att]['P']['values_list']:
+                                if target == 0: 
+                                    self.sensitive_dict[att]['P'][val]['N'].append(record)
+                                else:
+                                    self.sensitive_dict[att]['P'][val]['P'].append(record)
+                            else:
+                                print ("ERROR! ERROR!")
+                                print ("Value", val, "shouldn't exist for attribute", att)
+
+                        self.X_proba.append(record) #balanced dataset (OG + Syntethic)
+                        self.genetic_data.append(record) #other dataset with ONLY synthetic data
         
         print ("=== NEW DATASET ===")
         self.final_df = pd.DataFrame.from_records(self.X_proba)
