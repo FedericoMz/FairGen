@@ -250,7 +250,7 @@ def evaluate(individual, forest, medoid, mode, scaler):
     individual = np.array(individual[0])
     #print ("Ind:", individual)
 
-    individual = scaler.transform(individual.reshape(1, -1))
+    individual = scaler.transform(individual.reshape(1, -1))[0]
     #print ("Scaled Ind:", individual)
     #print ("Medo:", medoid)
 
