@@ -2,7 +2,7 @@ __all__ = ["FairGen"]
 
 import time
 
-from .algo import *
+from algo import *
 
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -11,13 +11,13 @@ import networkx as nx
 from itertools import product
 from collections import Counter, OrderedDict
 
-from pyod.models.iforest import IForest
+from sklearn.preprocessing import MinMaxScaler
+#from pyod.models.iforest import IForest
 from sklearn_extra.cluster import KMedoids
 from sklearn.neighbors import NearestNeighbors as NN
 
 import time
 
-from pyod.models.iforest import IForest
 
 
 
@@ -56,6 +56,8 @@ class FairGen(object):
         print ("Regressor:", self.causal_reg)
         print ("Classifier:", self.causal_class)
         
+        self.end_time = 0
+
         self.genetic_data = []
             
         self.values_in_dataset_indexes = []
@@ -148,24 +150,41 @@ class FairGen(object):
         
         self.og_df = self.X_proba.copy() 
 
+        self.scaler = MinMaxScaler()
+
+        self.df_scaled = self.scaler.fit_transform(self.og_df)
+
         
         #Training outlier detection methods for fitness
         
-        self.forest=IForest()
+        #self.forest=IForest()
 
-        self.forest.fit(self.X_proba)
+        self.forest = []
+
+        #self.forest.fit(self.X_proba)
             
         self.X_proba = self.X_proba.values
                 
         for att in self.discrete_attributes:
             self.discrete_indexes.append(get_index(att, self.attributes)) 
 
-        for att in self.values_in_dataset_attributes:
-            self.values_in_dataset_indexes.append(get_index(att, self.attributes))
+
+        if self.no_fair:
+            for att in self.values_in_dataset_attributes + self.sensitive_attributes:
+                self.values_in_dataset_indexes.append(get_index(att, self.attributes))
+                self.values_in_dataset_indexes.append(len(self.attributes))
+        else:    
+            for att in self.values_in_dataset_attributes:
+                self.values_in_dataset_indexes.append(get_index(att, self.attributes))
             
         for att in self.attributes:
-            if att not in self.sensitive_attributes + self.causal_reg_attributes + self.causal_class_attributes:
-                self.regular_indexes.append((get_index(att, self.attributes)))
+            if self.no_fair:
+                if att not in self.causal_reg_attributes + self.causal_class_attributes:
+                    self.regular_indexes.append((get_index(att, self.attributes)))
+                    self.regular_indexes.append(len(self.attributes))
+            else:
+                if att not in self.sensitive_attributes + self.causal_reg_attributes + self.causal_class_attributes:
+                    self.regular_indexes.append((get_index(att, self.attributes)))
                 
         self.X_proba = self.X_proba.tolist() #list of every record in the dataset
 
@@ -386,33 +405,15 @@ class FairGen(object):
         ### PART4 - Creating new records using the constraints to balance the dataset
         
         
-        if no_fair:
-            kmedoids = KMedoids(n_clusters=1, random_state=42).fit(self.og_df)
+        if self.no_fair:
+            kmedoids = KMedoids(n_clusters=1, random_state=42).fit(self.df_scaled)
             medoid = kmedoids.cluster_centers_[0] #medoid of entire dataset
             const = []
             new_records = GA(self.values, const, len(record_informations), self.forest, medoid, 
                             self.values_in_dataset_indexes, self.discrete_indexes, self.regular_indexes, self.causal_reg, 
-                            self.causal_class, self.mode, self.ds)
+                            self.causal_class, self.mode, self.ds, self.scaler)
             for all_records in new_records:
                 for record in all_records:
-                    target = const[0][1]
-                    for tup in const[1:]:
-                        att = self.attributes[tup[0]]
-                        val = tup[1]
-                        if val in self.sensitive_dict[att]['D']['values_list']:
-                            if target == 0: 
-                                self.sensitive_dict[att]['D'][val]['N'].append(record)
-                            else:
-                                self.sensitive_dict[att]['D'][val]['P'].append(record)
-                        elif val in self.sensitive_dict[att]['P']['values_list']:
-                            if target == 0: 
-                                self.sensitive_dict[att]['P'][val]['N'].append(record)
-                            else:
-                                self.sensitive_dict[att]['P'][val]['P'].append(record)
-                        else:
-                            print ("ERROR! ERROR!")
-                            print ("Value", val, "shouldn't exist for attribute", att)
-                            
                     self.X_proba.append(record) #balanced dataset (OG + Syntethic)
                     self.genetic_data.append(record) #other dataset with ONLY synthetic data
             
@@ -426,11 +427,13 @@ class FairGen(object):
                 for tup in const:
                     subset = subset[subset[subset.columns[tup[0]]] == tup[1]]
 
+                subset = self.scaler.transform(subset)
+
                 if len(subset) > 0:
                     kmedoids = KMedoids(n_clusters=1, random_state=42).fit(subset)
                     medoid = kmedoids.cluster_centers_[0] #medoid of subgroup
                 else:
-                    kmedoids = KMedoids(n_clusters=1, random_state=42).fit(self.og_df)
+                    kmedoids = KMedoids(n_clusters=1, random_state=42).fit(self.df_scaled)
                     medoid = kmedoids.cluster_centers_[0] #medoid of entire dataset
 
                 #we use a GA for every const [eg. Black, Male, Positve] and each associated number [e.g. 5]
@@ -439,32 +442,33 @@ class FairGen(object):
 
                 new_records = GA(self.values, const, constraints[const], self.forest, medoid, 
                                 self.values_in_dataset_indexes, self.discrete_indexes, self.regular_indexes, self.causal_reg, 
-                                self.causal_class, self.mode, self.ds)
+                                self.causal_class, self.mode, self.ds, self.scaler)
 
                 for all_records in new_records:
                     for record in all_records:
-                        target = const[0][1]
-                        for tup in const[1:]:
-                            att = self.attributes[tup[0]]
-                            val = tup[1]
-                            if val in self.sensitive_dict[att]['D']['values_list']:
-                                if target == 0: 
-                                    self.sensitive_dict[att]['D'][val]['N'].append(record)
-                                else:
-                                    self.sensitive_dict[att]['D'][val]['P'].append(record)
-                            elif val in self.sensitive_dict[att]['P']['values_list']:
-                                if target == 0: 
-                                    self.sensitive_dict[att]['P'][val]['N'].append(record)
-                                else:
-                                    self.sensitive_dict[att]['P'][val]['P'].append(record)
-                            else:
-                                print ("ERROR! ERROR!")
-                                print ("Value", val, "shouldn't exist for attribute", att)
+                        #target = const[0][1]
+                        #for tup in const[1:]:
+                         #   att = self.attributes[tup[0]]
+                          #  val = tup[1]
+                           # if val in self.sensitive_dict[att]['D']['values_list']:
+                            #    if target == 0: 
+                             #       self.sensitive_dict[att]['D'][val]['N'].append(record)
+                              #  else:
+                               #     self.sensitive_dict[att]['D'][val]['P'].append(record)
+                            #elif val in self.sensitive_dict[att]['P']['values_list']:
+                             #   if target == 0: 
+                              #      self.sensitive_dict[att]['P'][val]['N'].append(record)
+                               # else:
+                                #    self.sensitive_dict[att]['P'][val]['P'].append(record)
+                            #else:
+                             #   print ("ERROR! ERROR!")
+                              #  print ("Value", val, "shouldn't exist for attribute", att)
 
                         self.X_proba.append(record) #balanced dataset (OG + Syntethic)
                         self.genetic_data.append(record) #other dataset with ONLY synthetic data
         
         print ("=== NEW DATASET ===")
+        self.end_time = time.time() - self.start_time
         self.final_df = pd.DataFrame.from_records(self.X_proba)
         self.final_df.columns = self.attributes + [self.class_name]
         
@@ -474,11 +478,13 @@ class FairGen(object):
         
         get_discrimination (self.final_df, self.sensitive_attributes, self.class_name)
 
+
+
         print("")
         print("OG dataset length:", len(self.df))
         print("Records generated:", len(self.genetic_df))
         print("New dataset length:", len(self.final_df))
-        print("Time:", (time.time() - self.start_time))
+        print("Time:", self.end_time)
         
     def get_syntethic (self):
         
@@ -492,6 +498,12 @@ class FairGen(object):
             return self.final_df
         except:
             print("To get the final, balanced dataset, run FairGen.fit() and FairGen.balance()")
+
+    def get_results (self):
+        try:
+            return self.final_df, self.genetic_df, self.end_time
+        except:
+            print("To get the results, run FairGen.fit() and FairGen.balance()")
 
 
 

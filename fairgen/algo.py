@@ -8,11 +8,6 @@ import seaborn as sns
 
 from sklearn.naive_bayes import GaussianNB
 
-from sklearn.naive_bayes import GaussianNB
-
-
-from sklearn.naive_bayes import GaussianNB
-
 
 from deap import base
 from deap import creator
@@ -210,7 +205,10 @@ def random_individual(values, const,
     df = pd.DataFrame(values)
     
     ind = [None] * (len(df.columns)-1)
-        
+    
+    for tup in const:
+        ind[tup[0]] = tup[1]
+
     for i in regular_indexes:
         val = df.iloc[:, i].to_list()
         
@@ -223,10 +221,8 @@ def random_individual(values, const,
             ind[i] = random.randint(min(val), max(val))            
         else: #if the feat can assume a float value in a range
             ind[i] = random.uniform(min(val), max(val))
-            
-    for tup in const:
-        ind[tup[0]] = tup[1]
-    
+
+
     for e in causal_reg + causal_class:
         
         X_indexes = e[0]
@@ -249,23 +245,28 @@ def random_individual(values, const,
     
     return ind
 
-def evaluate(individual, forest, medoid, mode):
+def evaluate(individual, forest, medoid, mode, scaler):
  
-    individual = individual[0]
-        
-    #print (medoid)
-    #print ("IND:", individual)
+    individual = np.array(individual[0])
+    #print ("Ind:", individual)
+
+    individual = scaler.transform(individual.reshape(1, -1))
+    #print ("Scaled Ind:", individual)
+    #print ("Medo:", medoid)
+
+
     if mode == "Outlier":
-        score = float(forest.predict_proba(np.array([individual]))[0][1])
+        score = float(forest.predict_proba([individual])[0][1])
     elif mode == "Distance":
         if None in medoid:
-            score = float(forest.predict_proba(np.array([individual]))[0][1])
+            score = float(forest.predict_proba([individual])[0][1])
         else:
             score = distance.cosine(individual, medoid) / 2
     elif mode == 'Hybrid':
-        score = float(forest.predict_proba(np.array([individual]))[0][1])
+        score = float(forest.predict_proba([individual])[0][1])
         if None not in medoid:
             score = (score + distance.cosine(individual, medoid) / 2) / 2
+
     
     return score,
 
@@ -383,7 +384,7 @@ def mutate(individual, values,
 
 def GA(values, const, n_HOF, forest, medoid, 
        values_in_dataset_indexes, discrete_indexes, regular_indexes, 
-       causal_reg, causal_class, mode, ds):
+       causal_reg, causal_class, mode, ds, scaler):
     
     print ("GA started,", n_HOF, "individual(s) will be generated")
         
@@ -405,7 +406,7 @@ def GA(values, const, n_HOF, forest, medoid,
 
     toolbox.register("population", tools.initRepeat, list, toolbox.individual)
 
-    toolbox.register("evaluate", evaluate, forest=forest, medoid=medoid, mode=mode)
+    toolbox.register("evaluate", evaluate, forest=forest, medoid=medoid, mode=mode, scaler=scaler)
         
     toolbox.register("mate", mate, values=values, values_in_dataset_indexes=values_in_dataset_indexes, 
                      discrete_indexes=discrete_indexes, regular_indexes=regular_indexes, 
