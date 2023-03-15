@@ -199,7 +199,7 @@ def get_discrimination (df, sensitive_attributes, class_name):
 
 
 def random_individual(values, const, 
-                      values_in_dataset_indexes, discrete_indexes, regular_indexes, 
+                      weighted_indexes, random_indexes, integer_indexes, regular_indexes, 
                       causal_reg, causal_class, ds):
     
     df = pd.DataFrame(values)
@@ -212,12 +212,11 @@ def random_individual(values, const,
     for i in regular_indexes:
         val = df.iloc[:, i].to_list()
         
-        if i in values_in_dataset_indexes: #if the feat can only assume values already in the dataset
-            if ds == 'Random': #if values are picked randomly
-                ind[i] = random.choice(list(set(val)))
-            elif ds == 'Fixed': #if values are picked w.r.t. their frequency
-                ind[i] = random.choice(val)
-        elif i in discrete_indexes: #if the feat can only assume a random value in a int range
+        if i in weighted_indexes: #if the feat can only assume values already in the dataset, randomly
+            ind[i] = random.choice(val)
+        elif i in random_indexes:
+            ind[i] = random.choice(list(set(val))) #... or weighted w.r.t. the distribution
+        elif i in integer_indexes: #if the feat can only assume a random value in a int range
             ind[i] = random.randint(min(val), max(val))            
         else: #if the feat can assume a float value in a range
             ind[i] = random.uniform(min(val), max(val))
@@ -235,10 +234,10 @@ def random_individual(values, const,
              
         predicted = pred.predict([X_val])
         
-        if y in values_in_dataset_indexes:
+        if y in weighted_indexes + random_indexes:
             value_list = df.iloc[:, y].to_list()
             ind[y] = get_closest_value(predicted[0], value_list)        
-        elif y in discrete_indexes:
+        elif y in integer_indexes:
             ind[y] = int(predicted[0])        
         else: 
             ind[y] = predicted[0]
@@ -272,7 +271,7 @@ def evaluate(individual, forest, medoid, mode, scaler):
 
 
 def mate(ind1, ind2, values, 
-         values_in_dataset_indexes, discrete_indexes, regular_indexes, 
+         weighted_indexes, random_indexes, integer_indexes, regular_indexes, 
          causal_reg, causal_class):
     
     #custom crossover
@@ -299,10 +298,10 @@ def mate(ind1, ind2, values,
                     #ind1
                     predicted1 = pred.predict([X_val1])
 
-                    if y in values_in_dataset_indexes:
+                    if y in weighted_indexes + random_indexes:
                         value_list = df.iloc[:, y].to_list()
                         ind1[y] = get_closest_value(predicted1[0], value_list)        
-                    elif y in discrete_indexes:
+                    elif y in integer_indexes:
                         ind1[y] = int(predicted1[0])        
                     else: 
                         ind1[y] = predicted1[0]
@@ -310,10 +309,10 @@ def mate(ind1, ind2, values,
                     #ind2
                     predicted2 = pred.predict([X_val2])
 
-                    if y in values_in_dataset_indexes:
+                    if y in weighted_indexes + random_indexes:
                         value_list = df.iloc[:, y].to_list()
                         ind2[y] = get_closest_value(predicted2[0], value_list)        
-                    elif y in discrete_indexes:
+                    elif y in integer_indexes:
                         ind2[y] = int(predicted2[0])        
                     else: 
                         ind2[y] = predicted2[0]
@@ -328,7 +327,7 @@ def mate(ind1, ind2, values,
 
 
 def mutate(individual, values, 
-           values_in_dataset_indexes, discrete_indexes, regular_indexes, 
+           weighted_indexes, random_indexes, integer_indexes, regular_indexes, 
            causal_reg, causal_class, ds):
     
 #custom mutation
@@ -338,14 +337,13 @@ def mutate(individual, values,
     i = random.choice(regular_indexes) #we select a random feature to mutate
     
 
-    if i in values_in_dataset_indexes: 
+    if i in weighted_indexes: 
         val = df.iloc[:, i].to_list()
-        
-        if ds == "Random":
-            individual[i] = random.choice(list(set(val)))
-        elif ds == "Fixed":
-            individual[i] = random.choice(val)
-    elif i in discrete_indexes: #if the feat can only assume a random value in a int range
+        individual[i] = random.choice(val)
+    elif i in random_indexes: 
+        val = df.iloc[:, i].to_list()
+        individual[i] = random.choice(list(set(val)))
+    elif i in integer_indexes: #if the feat can only assume a random value in a int range
         val = [x for x in df.iloc[:, i].to_list() if x != individual[i]]
         individual[i] = random.randint(min(val), max(val))                        
     else: #if the feat can assume a float value in a range
@@ -367,10 +365,10 @@ def mutate(individual, values,
 
             predicted = pred.predict([X_val])
 
-            if y in values_in_dataset_indexes:
+            if y in weighted_indexes + random_indexes:
                 value_list = df.iloc[:, y].to_list()
                 individual[y] = get_closest_value(predicted[0], value_list)        
-            elif y in discrete_indexes:
+            elif y in integer_indexes:
                 individual[y] = int(predicted[0])        
             else: 
                 individual[y] = predicted[0]
@@ -383,7 +381,7 @@ def mutate(individual, values,
 
 
 def GA(values, const, n_HOF, forest, medoid, 
-       values_in_dataset_indexes, discrete_indexes, regular_indexes, 
+       weighted_indexes, integer_indexes, random_indexes, regular_indexes, 
        causal_reg, causal_class, mode, ds, scaler):
     
     print ("GA started,", n_HOF, "individual(s) will be generated")
@@ -398,8 +396,8 @@ def GA(values, const, n_HOF, forest, medoid,
 
     toolbox = base.Toolbox()
 
-    toolbox.register("random_individual", random_individual, values, const, values_in_dataset_indexes, 
-                     discrete_indexes, regular_indexes, causal_reg, causal_class, ds=ds)
+    toolbox.register("random_individual", random_individual, values, const, weighted_indexes, 
+                     random_indexes, integer_indexes, regular_indexes, causal_reg, causal_class, ds=ds)
 
     toolbox.register("individual", tools.initRepeat, creator.Individual, 
                      toolbox.random_individual, n=1)
@@ -408,12 +406,12 @@ def GA(values, const, n_HOF, forest, medoid,
 
     toolbox.register("evaluate", evaluate, forest=forest, medoid=medoid, mode=mode, scaler=scaler)
         
-    toolbox.register("mate", mate, values=values, values_in_dataset_indexes=values_in_dataset_indexes, 
-                     discrete_indexes=discrete_indexes, regular_indexes=regular_indexes, 
+    toolbox.register("mate", mate, values=values, weighted_indexes=weighted_indexes, random_indexes=random_indexes,
+                     integer_indexes=integer_indexes, regular_indexes=regular_indexes, 
                      causal_reg=causal_reg, causal_class=causal_class)
     
-    toolbox.register("mutate", mutate, values=values, values_in_dataset_indexes=values_in_dataset_indexes, 
-                     discrete_indexes=discrete_indexes, regular_indexes=regular_indexes, 
+    toolbox.register("mutate", mutate, values=values, weighted_indexes=weighted_indexes, random_indexes=random_indexes,
+                     integer_indexes=integer_indexes, regular_indexes=regular_indexes, 
                      causal_reg=causal_reg, causal_class=causal_class, ds=ds)    
     
     toolbox.register("select", tools.selNSGA2)

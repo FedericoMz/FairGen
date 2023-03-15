@@ -28,7 +28,7 @@ pd.options.mode.chained_assignment = None
 class FairGen(object):
     def __init__(self, df: object, sensitive_attributes:list, class_name:str, 
                 causal_reg:list = [], causal_class:list = [],
-                discrete_attributes:list = [], values_in_dataset_attributes:list = [], 
+                integer_attributes:list = [], weighted_attributes:list = [], random_attributes:list = [],
                 mode:str = 'Distance', ds:str = 'Fixed', no_fair:bool = False):
     
 
@@ -37,8 +37,9 @@ class FairGen(object):
         self.class_name = class_name
         self.causal_reg = causal_reg
         self.causal_class = causal_class
-        self.discrete_attributes = discrete_attributes  
-        self.values_in_dataset_attributes = values_in_dataset_attributes  
+        self.integer_attributes = integer_attributes  
+        self.weighted_attributes = weighted_attributes  
+        self.random_attributes = random_attributes
         self.mode = mode
         self.ds = ds
         self.no_fair = no_fair
@@ -50,8 +51,9 @@ class FairGen(object):
         print ("Target variable:", self.class_name)
         print ("Sensitive attributes:", self.sensitive_attributes)
         print ("")
-        print ("Discrete attributes:", self.discrete_attributes)
-        print ("Attributes with only dataset values:", self.values_in_dataset_attributes)
+        print ("Integer strategy for:", self.integer_attributes)
+        print ("Weighted strategy for:", self.weighted_attributes)
+        print ("Random strategy for:", self.random_attributes)
         print ("")
         print ("Regressor:", self.causal_reg)
         print ("Classifier:", self.causal_class)
@@ -60,9 +62,11 @@ class FairGen(object):
 
         self.genetic_data = []
             
-        self.values_in_dataset_indexes = []
+        self.weighted_indexes = []
+
+        self.random_indexes = []
         
-        self.discrete_indexes = []
+        self.integer_indexes = []
         
         self.regular_indexes = []
 
@@ -81,7 +85,7 @@ class FairGen(object):
         print ("Ranking the data...")
         
         self.X_proba = ranker(self.df, self.attributes, self.class_name)
-                
+        
         edges = []
         
         if len(self.causal_reg) > 0:
@@ -123,7 +127,8 @@ class FairGen(object):
                 e[0] = X_index
                 e[1] = y_index
                 e.append(classifier)       
-        
+        print ("!!")
+
         nodes = self.df.columns
     
         dag = nx.DiGraph(edges)
@@ -165,17 +170,25 @@ class FairGen(object):
             
         self.X_proba = self.X_proba.values
                 
-        for att in self.discrete_attributes:
-            self.discrete_indexes.append(get_index(att, self.attributes)) 
+        for att in self.integer_attributes:
+            self.integer_indexes.append(get_index(att, self.attributes)) 
+
+
+        for att in self.weighted_attributes:
+            self.weighted_indexes.append(get_index(att, self.attributes))
+
 
 
         if self.no_fair:
-            for att in self.values_in_dataset_attributes + self.sensitive_attributes:
-                self.values_in_dataset_indexes.append(get_index(att, self.attributes))
-                self.values_in_dataset_indexes.append(len(self.attributes))
+            for att in self.random_attributes + self.sensitive_attributes:
+                self.random_indexes.append(get_index(att, self.attributes))
+            self.random_indexes.append(len(self.attributes))
+            print ("Random index:", self.random_indexes)
         else:    
-            for att in self.values_in_dataset_attributes:
-                self.values_in_dataset_indexes.append(get_index(att, self.attributes))
+            for att in self.random_attributes:
+                self.random_indexes.append(get_index(att, self.attributes))
+
+
             
         for att in self.attributes:
             if self.no_fair:
@@ -410,7 +423,7 @@ class FairGen(object):
             medoid = kmedoids.cluster_centers_[0] #medoid of entire dataset
             const = []
             new_records = GA(self.values, const, len(record_informations), self.forest, medoid, 
-                            self.values_in_dataset_indexes, self.discrete_indexes, self.regular_indexes, self.causal_reg, 
+                            self.weighted_indexes, self.integer_indexes, self.random_indexes, self.regular_indexes, self.causal_reg, 
                             self.causal_class, self.mode, self.ds, self.scaler)
             for all_records in new_records:
                 for record in all_records:
@@ -441,7 +454,7 @@ class FairGen(object):
                 #if we have 20 unique consts, we use the GA 20 times
 
                 new_records = GA(self.values, const, constraints[const], self.forest, medoid, 
-                                self.values_in_dataset_indexes, self.discrete_indexes, self.regular_indexes, self.causal_reg, 
+                                self.weighted_indexes, self.integer_indexes, self.random_indexes, self.regular_indexes, self.causal_reg, 
                                 self.causal_class, self.mode, self.ds, self.scaler)
 
                 for all_records in new_records:
