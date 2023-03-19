@@ -16,10 +16,7 @@ from sklearn.preprocessing import MinMaxScaler
 from sklearn_extra.cluster import KMedoids
 from sklearn.neighbors import NearestNeighbors as NN
 
-import time
-
-
-
+import 
 
 import warnings
 warnings.filterwarnings('ignore')
@@ -201,13 +198,9 @@ class FairGen(object):
                 
         self.X_proba = self.X_proba.tolist() #list of every record in the dataset
 
-        print("")
-        print("Removing records...")
-        print("")
-
     def balance(self):
 
-        self.start_time = time.time()
+        
 
         #### PART2 - Record Removal [of DN / PP]
         
@@ -339,7 +332,8 @@ class FairGen(object):
         # then we'll try the next combination
         # this way, before creating records with a less frequent combination of sens attributes values,
         # we are sure we exhausted the more frequent combinations
-
+        
+        self.start_time = time.time()
         for comb in common_combs:
             while True:
                 starting_const_len = len(constraints)
